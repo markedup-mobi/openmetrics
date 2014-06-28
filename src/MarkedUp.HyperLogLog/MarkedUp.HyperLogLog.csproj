@@ -39,7 +39,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Class1.cs" />
+    <Compile Include="BitArrayHelpers.cs" />
+    <Compile Include="HyperLogLog.cs" />
     <Compile Include="Hash\Murmur.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

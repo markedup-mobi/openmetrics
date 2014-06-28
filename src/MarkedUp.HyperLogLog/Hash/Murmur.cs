@@ -15,6 +15,11 @@
  * the License.
  */
 
+using System;
+using System.Collections;
+using System.Linq;
+using System.Text;
+
 namespace MarkedUp.HyperLogLog.Hash
 {
     /// <summary>
@@ -36,7 +41,88 @@ namespace MarkedUp.HyperLogLog.Hash
 
         private const ulong X64_128_C2 = 0x4cf5ad432745937fL;
 
+        private static readonly BitArray ZeroBytes32 = new BitArray(32, false);
+
+        private static readonly BitArray ZeroBytes64 = new BitArray(64, false);
+
         #endregion
+
+        /// <summary>
+        /// Pass a .NET object to the function and get a <see cref="BitArray"/>
+        /// object back in return.
+        /// </summary>
+        /// <param name="obj">the object to hash.</param>
+        /// <param name="use32Bit">Optional argument. If set to true, a 32bit hash value will be returned. If false, a 128-bit value will be used instead.</param>
+        /// <returns>A hash value, expressed as a bit array. Can be either 32bit or 128bits depending on the <see cref="use32Bit"/> value.</returns>
+        public static byte[] Hash(object obj, bool use32Bit = true)
+        {
+            return use32Bit ? Hash32(obj) : Hash128(obj);
+        }
+
+        /// <summary>
+        /// Pass a .NET object to the function and get a 32-bit <see cref="BitArray"/> in return.
+        /// </summary>
+        /// <param name="obj">the object to hash.</param>
+        /// <returns>A hash value, expressed as a 32 bit array.</returns>
+        public static byte[] Hash32(object obj)
+        {
+            var objbytes = GetObjBytes(obj);
+            var hash = Hash_X86_32(objbytes, objbytes.Length, 1);
+            return GetObjBytes(hash);
+        }
+
+        /// <summary>
+        /// Pass a .NET object to the function and get a 32-bit <see cref="BitArray"/> in return.
+        /// </summary>
+        /// <param name="obj">the object to hash.</param>
+        /// <returns>A hash value, expressed as a 32 bit array.</returns>
+        public static byte[] Hash128(object obj)
+        {
+            var objbytes = GetObjBytes(obj);
+            var hash = Hash_X64_128(objbytes, objbytes.Length, 1);
+            return GetObjBytes(hash[0]).Concat(GetObjBytes(hash[1])).ToArray();
+        }
+
+        /// <summary>
+        /// Translate the offered object into a byte array.
+        /// </summary>
+        /// <param name="obj">An arbitrary .NET object</param>
+        /// <returns>The object encoded into bytes - in the case of custom classes, the hashcode may be used.</returns>
+        private static byte[] GetObjBytes(object obj)
+        {
+            while (true)
+            {
+                if (obj == null)
+                    return new byte[] {0};
+                if (obj is int)
+                    return BitConverter.GetBytes((int) obj);
+                if (obj is uint)
+                    return BitConverter.GetBytes((uint) obj);
+                if (obj is short)
+                    return BitConverter.GetBytes((short) obj);
+                if (obj is ushort)
+                    return BitConverter.GetBytes((ushort) obj);
+                if (obj is bool)
+                    return BitConverter.GetBytes((bool) obj);
+                if (obj is long)
+                    return BitConverter.GetBytes((long) obj);
+                if (obj is ulong)
+                    return BitConverter.GetBytes((ulong) obj);
+                if (obj is char)
+                    return BitConverter.GetBytes((char) obj);
+                if (obj is float)
+                    return BitConverter.GetBytes((float) obj);
+                if (obj is double)
+                    return BitConverter.GetBytes((double) obj);
+                if (obj is decimal)
+                    return new BitArray(decimal.GetBits((decimal) obj)).ToBytes();
+                if (obj is Guid)
+                    return ((Guid) obj).ToByteArray();
+                if (obj is string)
+                    return Encoding.Unicode.GetBytes((string) obj);
+                obj = obj.GetHashCode();
+            }
+        }
 
         /// <summary>
         /// Compute a 32-bit Murmur3 hash for an X86 system.
@@ -44,12 +130,12 @@ namespace MarkedUp.HyperLogLog.Hash
         /// <param name="data">The data that needs to be hashed</param>
         /// <param name="length">The length of the data being hashed</param>
         /// <param name="seed">A seed value used to compute the hash</param>
-        /// <returns>A computed hash value, as a signed long integer.</returns>
-        public static uint Hash_X86_32(byte[] data, int length, long seed)
+        /// <returns>A computed hash value, as a signed integer.</returns>
+        public static uint Hash_X86_32(byte[] data, int length, uint seed)
         {
 
             var nblocks = length >> 2;
-            var h1 = (uint)seed;
+            var h1 = seed;
             uint k1 = 0;
 
             for (var i = 0; i < nblocks; i++)
@@ -91,6 +177,96 @@ namespace MarkedUp.HyperLogLog.Hash
             return h1;
         }
 
+        /// <summary>
+        /// Compute a 128-bit Murmur3 hash for an X64 system.
+        /// </summary>
+        /// <param name="data">The data that needs to be hashed</param>
+        /// <param name="length">The length of the data being hashed</param>
+        /// <param name="seed">A seed value used to compute the hash</param>
+        /// <returns>A computed hash value, as an array consisting of two unsigned long integers.</returns>
+        public static ulong[] Hash_X64_128(byte[] data, int length, uint seed)
+        {
+            ulong h1 = seed;
+            ulong h2 = seed;
+            ulong k1, k2 = 0;
+            var nblocks = length >> 4; // /16
+
+            for (var i = 0; i < nblocks; i++)
+            {
+                k1 = GetBlock64(data, i << 3);
+                k2 = GetBlock64(data, (i+1) << 3);
+
+                k1 *= X64_128_C1;
+                k1 = RotateLeft64(k1, 31);
+                k1 *= X64_128_C2;
+                h1 ^= k1;
+
+                h1 = RotateLeft64(h1, 27);
+                h1 += h2;
+                h1 += h2; h1 = h1 * 5 + 0x52dce729;
+
+                k2 *= X64_128_C2;
+                k2 = RotateLeft64(k2, 33);
+                k2 *= X64_128_C1;
+                h2 ^= k2;
+                h2 = RotateLeft64(h2, 31);
+                h2 += h1; h2 = h2 * 5 + 0x38495ab5;
+            }
+
+            //tail - there's an unprocessed tail of data that we need to hash
+            var offset = (nblocks << 4); // nblocks * 16
+            k1 = 0; k2 = 0;
+            switch (length & 15)
+            {
+                case 15: k2 ^= ((ulong)data[offset + 14]) << 48;
+                    goto case 14;
+                case 14: k2 ^= ((ulong)data[offset + 13]) << 40;
+                    goto case 13;
+                case 13: k2 ^= ((ulong)data[offset + 12]) << 32;
+                    goto case 12;
+                case 12: k2 ^= ((ulong)data[offset + 11]) << 24;
+                    goto case 11;
+                case 11: k2 ^= ((ulong)data[offset + 10]) << 16;
+                    goto case 10;
+                case 10: k2 ^= ((ulong)data[offset + 9]) << 8;
+                    goto case 9;
+                case 9: k2 ^= ((ulong)data[offset + 8]) << 0;
+                    k2 *= X64_128_C2; k2 = RotateLeft64(k2, 33); k2 *= X64_128_C1; h2 ^= k2;
+                    goto case 8;
+                case 8: k1 ^= ((ulong)data[offset + 7]) << 56;
+                    goto case 7;
+                case 7: k1 ^= ((ulong)data[offset + 6]) << 48;
+                    goto case 6;
+                case 6: k1 ^= ((ulong)data[offset + 5]) << 40;
+                    goto case 5;
+                case 5: k1 ^= ((ulong)data[offset + 4]) << 32;
+                    goto case 4;
+                case 4: k1 ^= ((ulong)data[offset + 3]) << 24;
+                    goto case 3;
+                case 3: k1 ^= ((ulong)data[offset + 2]) << 16;
+                    goto case 2;
+                case 2: k1 ^= ((ulong)data[offset + 1]) << 8;
+                    goto case 1;
+                case 1: k1 ^= ((ulong)data[offset + 0]) << 0;
+                    k1 *= X64_128_C1; k1 = RotateLeft64(k1, 31); k1 *= X64_128_C2; h1 ^= k1;
+                    break;
+            }
+
+            //finalization
+            h1 ^= (ulong) length; h2 ^= (ulong) length;
+
+            h1 += h2;
+            h2 += h1;
+
+            h1 = ForceMix64(h1);
+            h2 = ForceMix64(h2);
+
+            h1 += h2;
+            h2 += h1;
+
+            return new[] {h1, h2};
+        }
+
         #region Internal hash functions
 
         /// <summary>
@@ -98,7 +274,7 @@ namespace MarkedUp.HyperLogLog.Hash
         /// </summary>
         /// <param name="blocks">the original byte array</param>
         /// <param name="i">the current block count</param>
-        /// <returns>An unsinged 32-bit integer</returns>
+        /// <returns>An unsigned 32-bit integer</returns>
         private static uint GetBlock32(byte[] blocks, int i)
         {
             uint k1 = blocks[i];
@@ -106,6 +282,21 @@ namespace MarkedUp.HyperLogLog.Hash
             k1 |= (uint)blocks[i + 2] << 16;
             k1 |= (uint)blocks[i + 3] << 24;
             return k1;
+        }
+
+
+        /// <summary>
+        /// Read the next 8-byte block (int64) from a block number
+        /// </summary>
+        /// <param name="blocks">the original byte array</param>
+        /// <param name="i">the current block count</param>
+        /// <returns>An unsigned 64-bit integer</returns>
+        private static ulong GetBlock64(byte[] blocks, int i)
+        {
+            unchecked
+            {
+                return (ulong)BitConverter.ToInt64(blocks, i);
+            }
         }
 
         /// <summary>
@@ -117,6 +308,17 @@ namespace MarkedUp.HyperLogLog.Hash
         private static uint RotateLeft32(uint original, int shift)
         {
             return (original << shift) | (original >> (32 - shift));
+        }
+
+        /// <summary>
+        /// Rotate a 64-bit unsigned integer to the left by <see cref="shift"/> bits
+        /// </summary>
+        /// <param name="original">Original value</param>
+        /// <param name="shift">The shift value</param>
+        /// <returns>The rotated 64-bit integer</returns>
+        private static ulong RotateLeft64(ulong original, int shift)
+        {
+            return (original << shift) | (original >> (64 - shift));
         }
 
         /// <summary>
@@ -151,17 +353,7 @@ namespace MarkedUp.HyperLogLog.Hash
             return k;
         }
 
-        /// <summary>
-        /// Rotate a 64-bit unsigned integer to the left by <see cref="shift"/> bits
-        /// </summary>
-        /// <param name="original">Original value</param>
-        /// <param name="shift">The shift value</param>
-        /// <returns>The rotated 64-bit integer</returns>
-        private static ulong RotateLeft64(ulong original, int shift)
-        {
-            return (original << shift) | (original >> (64 - shift));
-        }
-
+       
         #endregion
     }
 
