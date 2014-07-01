@@ -28,60 +28,116 @@ namespace MarkedUp.HyperLogLog.Hash
     /// This is a C# port of the cannonical algorithm in C++, with some helper functions
     /// designed to make it easier to work with POCOs and .NET primitives.
     /// </summary>
-    public static class MurmurHash
+    public static class Murmur3
     {
 
-        #region Constants for X86 / X64 implementations
+        #region Constants 
+
+        private const uint ObjectSeed = 0xef91da3;
+        private const uint BytesSeed = 0x1a7d9dfe;
+        private const uint StringSeed = 0x331df49;
+
+        /* Constants for 32-bit hashing */
 
         private const uint X86_32_C1 = 0xcc9e2d51;
 
         private const uint X86_32_C2 = 0x1b873593;
 
+        /* Constants for 64-bit hashing */
+
         private const ulong X64_128_C1 = 0x87c37b91114253d5L;
 
         private const ulong X64_128_C2 = 0x4cf5ad432745937fL;
 
-        private static readonly BitArray ZeroBytes32 = new BitArray(32, false);
+        #endregion
 
-        private static readonly BitArray ZeroBytes64 = new BitArray(64, false);
+        #region Internal 32-bit hashing helpers
+
+        /// <summary>
+        /// Rotate a 32-bit unsigned integer to the left by <see cref="shift"/> bits
+        /// </summary>
+        /// <param name="original">Original value</param>
+        /// <param name="shift">The shift value</param>
+        /// <returns>The rotated 32-bit integer</returns>
+        private static uint RotateLeft32(uint original, int shift)
+        {
+            return (original << shift) | (original >> (32 - shift));
+        }
+
+        /// <summary>
+        /// Rotate a 64-bit unsigned integer to the left by <see cref="shift"/> bits
+        /// </summary>
+        /// <param name="original">Original value</param>
+        /// <param name="shift">The shift value</param>
+        /// <returns>The rotated 64-bit integer</returns>
+        private static ulong RotateLeft64(ulong original, int shift)
+        {
+            return (original << shift) | (original >> (64 - shift));
+        }
+
+        
+
+        private static uint Mix32(uint hash, uint data)
+        {
+            var h1 = MixLast32(hash, data);
+            h1 = RotateLeft32(h1, 13);
+            h1 = h1 + (5 + 0xe6546b64);
+            return h1;
+        }
+
+        private static uint MixLast32(uint hash, uint data)
+        {
+            var k1 = data;
+
+            k1 *= X86_32_C1;
+            k1 = RotateLeft32(k1, 15);
+            k1 *= X86_32_C2;
+
+            hash ^= k1;
+            return hash;
+        }
+
+        /// <summary>
+        /// Finalization mix - force all bits of a hash block to avalanche.
+        /// 
+        /// I have no idea what that means but it sound awesome.
+        /// </summary>
+        private static uint Avalanche32(uint h)
+        {
+            h ^= h >> 16;
+            h *= 0x85ebca6b;
+            h ^= h >> 13;
+            h *= 0xc2b2ae35;
+            h ^= h >> 16;
+
+            return h;
+        }
 
         #endregion
 
         /// <summary>
-        /// Pass a .NET object to the function and get a <see cref="BitArray"/>
-        /// object back in return.
+        /// Pass a .NET object to the function and get a 32-bit Murmur3 hash in return.
         /// </summary>
         /// <param name="obj">the object to hash.</param>
-        /// <param name="use32Bit">Optional argument. If set to true, a 32bit hash value will be returned. If false, a 128-bit value will be used instead.</param>
-        /// <returns>A hash value, expressed as a bit array. Can be either 32bit or 128bits depending on the <see cref="use32Bit"/> value.</returns>
-        public static byte[] Hash(object obj, bool use32Bit = true)
+        /// <returns>A hash value, expressed as a 32 bit integer.</returns>
+        public static int Hash(object obj)
         {
-            return use32Bit ? Hash32(obj) : Hash128(obj);
+            var objbytes = GetObjBytes(obj);
+            if (obj == null) return 0; //short-circuit the hash if the value is null
+            var hash = Hash_X86_32(objbytes, objbytes.Length, ObjectSeed);
+            return hash;
         }
 
         /// <summary>
-        /// Pass a .NET object to the function and get a 32-bit <see cref="BitArray"/> in return.
+        /// Pass a .NET object to the function and get a 32-bit Murmur3 hash in return.
         /// </summary>
-        /// <param name="obj">the object to hash.</param>
-        /// <returns>A hash value, expressed as a 32 bit array.</returns>
-        public static byte[] Hash32(object obj)
+        /// <param name="bytes">An array of bytes to hash</param>
+        /// <returns>A hash value, expressed as a 32 bit integer.</returns>
+        public static int HashBytes(byte[] bytes)
         {
-            var objbytes = GetObjBytes(obj);
-            var hash = Hash_X86_32(objbytes, objbytes.Length, 1);
-            return GetObjBytes(hash);
+            return Hash_X86_32(bytes, bytes.Length, BytesSeed);
         }
 
-        /// <summary>
-        /// Pass a .NET object to the function and get a 32-bit <see cref="BitArray"/> in return.
-        /// </summary>
-        /// <param name="obj">the object to hash.</param>
-        /// <returns>A hash value, expressed as a 32 bit array.</returns>
-        public static byte[] Hash128(object obj)
-        {
-            var objbytes = GetObjBytes(obj);
-            var hash = Hash_X64_128(objbytes, objbytes.Length, 1);
-            return GetObjBytes(hash[0]).Concat(GetObjBytes(hash[1])).ToArray();
-        }
 
         /// <summary>
         /// Translate the offered object into a byte array.
@@ -94,6 +150,8 @@ namespace MarkedUp.HyperLogLog.Hash
             {
                 if (obj == null)
                     return new byte[] {0};
+                if (obj is byte[])
+                    return (byte[]) obj;
                 if (obj is int)
                     return BitConverter.GetBytes((int) obj);
                 if (obj is uint)
@@ -131,51 +189,56 @@ namespace MarkedUp.HyperLogLog.Hash
         /// <param name="length">The length of the data being hashed</param>
         /// <param name="seed">A seed value used to compute the hash</param>
         /// <returns>A computed hash value, as a signed integer.</returns>
-        public static uint Hash_X86_32(byte[] data, int length, uint seed)
+        public static int Hash_X86_32(byte[] data, int length, uint seed)
         {
 
-            var nblocks = length >> 2;
+            var nblocks = length;
             var h1 = seed;
             uint k1 = 0;
 
-            for (var i = 0; i < nblocks; i++)
+            var i = 0;
+            while (nblocks >= 4)
             {
-                var i4 = i << 2;
-                k1 = GetBlock32(data, i4);
-                k1 *= X86_32_C1;
-                k1 = RotateLeft32(k1, 15);
-                k1 *= X86_32_C2;
+                var k = data[i + 0] & 0xFF;
+                k |= (data[i + 1] & 0xFF) << 8;
+                k |= (data[i + 2] & 0xFF) << 16;
+                k |= (data[i + 3] & 0xFF) << 24;
 
-                h1 ^= k1;
-                h1 = RotateLeft32(h1, 13);
-                h1 = h1 + (5 + 0xe6546b64);
+                unchecked
+                {
+                    h1 = Mix32(h1, (uint)k);
+                }
+
+                i += 4;
+                nblocks -= 4;
             }
 
             //tail - there's an unprocessed tail of data that we need to hash
-            var offset = (nblocks << 2); // nblocks * 2
-
-            switch (length & 3)
+            switch (length)
             {
                 case 3:
-                    k1 ^= ((uint)data[offset + 2] << 16);
+                    k1 ^= (((uint)data[i + 2] & 0xFF) << 16);
                     goto case 2; //thanks for the code smell, C#!
                 case 2:
-                    k1 ^= ((uint)data[offset + 1] << 8);
+                    k1 ^= (((uint)data[i + 1] & 0xFF) << 8);
                     goto case 1;
                 case 1:
-                    k1 ^= (data[offset]);
-                    k1 *= X86_32_C1;
-                    k1 = RotateLeft32(k1, 15);
-                    k1 *= X86_32_C2;
-                    h1 ^= k1;
+                    k1 ^= ((uint)data[i] & 0xFF);
+                    h1 = MixLast32(h1, k1);
                     break;
             }
 
             //finalization
             h1 ^= (uint)length;
-            h1 = ForceMix32(h1);
-            return h1;
+            h1 = Avalanche32(h1);
+            unchecked
+            {
+                return (int)h1;
+            }
         }
+
+
+        #region 64-bit hash functions
 
         /// <summary>
         /// Compute a 128-bit Murmur3 hash for an X64 system.
@@ -267,23 +330,7 @@ namespace MarkedUp.HyperLogLog.Hash
             return new[] {h1, h2};
         }
 
-        #region Internal hash functions
-
-        /// <summary>
-        /// Read the next 4-byte block (int32) from a block number
-        /// </summary>
-        /// <param name="blocks">the original byte array</param>
-        /// <param name="i">the current block count</param>
-        /// <returns>An unsigned 32-bit integer</returns>
-        private static uint GetBlock32(byte[] blocks, int i)
-        {
-            uint k1 = blocks[i];
-            k1 |= (uint)blocks[i + 1] << 8;
-            k1 |= (uint)blocks[i + 2] << 16;
-            k1 |= (uint)blocks[i + 3] << 24;
-            return k1;
-        }
-
+        
 
         /// <summary>
         /// Read the next 8-byte block (int64) from a block number
@@ -297,44 +344,6 @@ namespace MarkedUp.HyperLogLog.Hash
             {
                 return (ulong)BitConverter.ToInt64(blocks, i);
             }
-        }
-
-        /// <summary>
-        /// Rotate a 32-bit unsigned integer to the left by <see cref="shift"/> bits
-        /// </summary>
-        /// <param name="original">Original value</param>
-        /// <param name="shift">The shift value</param>
-        /// <returns>The rotated 32-bit integer</returns>
-        private static uint RotateLeft32(uint original, int shift)
-        {
-            return (original << shift) | (original >> (32 - shift));
-        }
-
-        /// <summary>
-        /// Rotate a 64-bit unsigned integer to the left by <see cref="shift"/> bits
-        /// </summary>
-        /// <param name="original">Original value</param>
-        /// <param name="shift">The shift value</param>
-        /// <returns>The rotated 64-bit integer</returns>
-        private static ulong RotateLeft64(ulong original, int shift)
-        {
-            return (original << shift) | (original >> (64 - shift));
-        }
-
-        /// <summary>
-        /// Finalization mix - force all bits of a hash block to avalanche.
-        /// 
-        /// I have no idea what that means but it sound awesome.
-        /// </summary>
-        private static uint ForceMix32(uint h)
-        {
-            h ^= h >> 16;
-            h *= 0x85ebca6b;
-            h ^= h >> 13;
-            h *= 0xc2b2ae35;
-            h ^= h >> 16;
-
-            return h;
         }
 
         /// <summary>
