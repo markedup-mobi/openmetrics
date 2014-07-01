@@ -19,7 +19,7 @@ namespace MarkedUp.HyperLogLog.Tests.Hash
         [Test]
         public void Should_have_zero_Guid_collisions()
         {
-            var targetItems = 10000000; //100 million guids
+            var targetItems = 1000000; //100 million guids
             var i = targetItems;
             var start = DateTime.UtcNow.Ticks;
             var hashes = new HashSet<int>();
