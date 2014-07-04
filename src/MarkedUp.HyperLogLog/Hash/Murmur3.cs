@@ -178,7 +178,7 @@ namespace MarkedUp.HyperLogLog.Hash
                     return ((Guid) obj).ToByteArray();
                 if (obj is string)
                     return Encoding.Unicode.GetBytes((string) obj);
-                obj = obj.GetHashCode();
+                obj = obj.ToString();
             }
         }
 
