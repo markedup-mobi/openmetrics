@@ -43,7 +43,7 @@ namespace MarkedUp.HyperLogLog.Hash
 
         private const uint X86_32_C2 = 0x1b873593;
 
-        /* Constants for 64-bit hashing */
+        /* Constants for 128-bit hashing */
 
         private const ulong X64_128_C1 = 0x87c37b91114253d5L;
 
