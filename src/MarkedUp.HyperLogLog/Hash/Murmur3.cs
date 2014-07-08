@@ -31,7 +31,7 @@ namespace MarkedUp.HyperLogLog.Hash
     public static class Murmur3
     {
 
-        #region Constants 
+        #region Constants
 
         private const uint ObjectSeed = 0xef91da3;
         private const uint BytesSeed = 0x1a7d9dfe;
@@ -75,7 +75,7 @@ namespace MarkedUp.HyperLogLog.Hash
             return (original << shift) | (original >> (64 - shift));
         }
 
-        
+
 
         private static uint Mix32(uint hash, uint data)
         {
@@ -138,6 +138,16 @@ namespace MarkedUp.HyperLogLog.Hash
             return Hash_X86_32(bytes, bytes.Length, BytesSeed);
         }
 
+        /// <summary>
+        /// Pass a .NET <see cref="string"/> to the function and get a 32-bit Murmur3 hash in return.
+        /// </summary>
+        /// <param name="str">A string to hash</param>
+        /// <returns>A hash value, expressed as a 32 bit integer.</returns>
+        public static int HashString(string str)
+        {
+            var bytes = GetObjBytes(str);
+            return Hash_X86_32(bytes, bytes.Length, StringSeed);
+        }
 
         /// <summary>
         /// Translate the offered object into a byte array.
@@ -149,35 +159,35 @@ namespace MarkedUp.HyperLogLog.Hash
             while (true)
             {
                 if (obj == null)
-                    return new byte[] {0};
+                    return new byte[] { 0 };
                 if (obj is byte[])
-                    return (byte[]) obj;
+                    return (byte[])obj;
                 if (obj is int)
-                    return BitConverter.GetBytes((int) obj);
+                    return BitConverter.GetBytes((int)obj);
                 if (obj is uint)
-                    return BitConverter.GetBytes((uint) obj);
+                    return BitConverter.GetBytes((uint)obj);
                 if (obj is short)
-                    return BitConverter.GetBytes((short) obj);
+                    return BitConverter.GetBytes((short)obj);
                 if (obj is ushort)
-                    return BitConverter.GetBytes((ushort) obj);
+                    return BitConverter.GetBytes((ushort)obj);
                 if (obj is bool)
-                    return BitConverter.GetBytes((bool) obj);
+                    return BitConverter.GetBytes((bool)obj);
                 if (obj is long)
-                    return BitConverter.GetBytes((long) obj);
+                    return BitConverter.GetBytes((long)obj);
                 if (obj is ulong)
-                    return BitConverter.GetBytes((ulong) obj);
+                    return BitConverter.GetBytes((ulong)obj);
                 if (obj is char)
-                    return BitConverter.GetBytes((char) obj);
+                    return BitConverter.GetBytes((char)obj);
                 if (obj is float)
-                    return BitConverter.GetBytes((float) obj);
+                    return BitConverter.GetBytes((float)obj);
                 if (obj is double)
-                    return BitConverter.GetBytes((double) obj);
+                    return BitConverter.GetBytes((double)obj);
                 if (obj is decimal)
-                    return new BitArray(decimal.GetBits((decimal) obj)).ToBytes();
+                    return new BitArray(decimal.GetBits((decimal)obj)).ToBytes();
                 if (obj is Guid)
-                    return ((Guid) obj).ToByteArray();
+                    return ((Guid)obj).ToByteArray();
                 if (obj is string)
-                    return Encoding.Unicode.GetBytes((string) obj);
+                    return Encoding.Unicode.GetBytes((string)obj);
                 obj = obj.ToString();
             }
         }
@@ -189,7 +199,7 @@ namespace MarkedUp.HyperLogLog.Hash
         /// <param name="length">The length of the data being hashed</param>
         /// <param name="seed">A seed value used to compute the hash</param>
         /// <returns>A computed hash value, as a signed integer.</returns>
-        public static int Hash_X86_32(byte[] data, int length, uint seed)
+        public static  int Hash_X86_32(byte[] data, int length, uint seed)
         {
 
             var nblocks = length;
@@ -257,7 +267,7 @@ namespace MarkedUp.HyperLogLog.Hash
             for (var i = 0; i < nblocks; i++)
             {
                 k1 = GetBlock64(data, i << 3);
-                k2 = GetBlock64(data, (i+1) << 3);
+                k2 = GetBlock64(data, (i + 1) << 3);
 
                 k1 *= X64_128_C1;
                 k1 = RotateLeft64(k1, 31);
@@ -316,7 +326,7 @@ namespace MarkedUp.HyperLogLog.Hash
             }
 
             //finalization
-            h1 ^= (ulong) length; h2 ^= (ulong) length;
+            h1 ^= (ulong)length; h2 ^= (ulong)length;
 
             h1 += h2;
             h2 += h1;
@@ -327,10 +337,10 @@ namespace MarkedUp.HyperLogLog.Hash
             h1 += h2;
             h2 += h1;
 
-            return new[] {h1, h2};
+            return new[] { h1, h2 };
         }
 
-        
+
 
         /// <summary>
         /// Read the next 8-byte block (int64) from a block number
@@ -362,7 +372,7 @@ namespace MarkedUp.HyperLogLog.Hash
             return k;
         }
 
-       
+
         #endregion
     }
 
