@@ -143,7 +143,7 @@ namespace MarkedUp.HyperLogLog.Hash
         /// Translate the offered object into a byte array.
         /// </summary>
         /// <param name="obj">An arbitrary .NET object</param>
-        /// <returns>The object encoded into bytes - in the case of custom classes, the hashcode may be used.</returns>
+        /// <returns>The object encoded into bytes - in the case of custom classes, the value of it's ToString() method will be used.</returns>
         private static byte[] GetObjBytes(object obj)
         {
             while (true)
