@@ -43,7 +43,7 @@ namespace MarkedUp.HyperLogLog.Hash
 
         private const uint X86_32_C2 = 0x1b873593;
 
-        /* Constants for 64-bit hashing */
+        /* Constants for 128-bit hashing */
 
         private const ulong X64_128_C1 = 0x87c37b91114253d5L;
 
@@ -153,7 +153,7 @@ namespace MarkedUp.HyperLogLog.Hash
         /// Translate the offered object into a byte array.
         /// </summary>
         /// <param name="obj">An arbitrary .NET object</param>
-        /// <returns>The object encoded into bytes - in the case of custom classes, the hashcode may be used.</returns>
+        /// <returns>The object encoded into bytes - in the case of custom classes, the value of it's ToString() method will be used.</returns>
         private static byte[] GetObjBytes(object obj)
         {
             while (true)
